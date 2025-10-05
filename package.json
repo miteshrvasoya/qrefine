@@ -2,7 +2,7 @@
   "name": "qrefine",
   "displayName": "qrefine",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "ParatparTech",
   "engines": {
     "vscode": "^1.103.0"
@@ -35,7 +35,6 @@
       ]
     }
   ],
-  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -58,8 +57,12 @@
     "languages": [
       {
         "id": "sql",
-        "extensions": [".sql"],
-        "aliases": ["SQL"]
+        "extensions": [
+          ".sql"
+        ],
+        "aliases": [
+          "SQL"
+        ]
       }
     ],
     "codeActions": [
