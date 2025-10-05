@@ -1,0 +1,130 @@
+{
+  "name": "qrefine",
+  "displayName": "qrefine",
+  "description": "",
+  "version": "0.0.1",
+  "publisher": "ParatparTech",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "main": "./dist/extension.js",
+  "categories": [
+    "Linters"
+  ],
+  "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/qrefine"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/qrefine/issues"
+  },
+  "activationEvents": [
+    "onCommand:qrefine.connect",
+    "onCommand:qrefine.analyze",
+    "*"
+  ],
+  "languages": [
+    {
+      "id": "sql",
+      "extensions": [
+        ".sql"
+      ],
+      "aliases": [
+        "SQL"
+      ]
+    }
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "qrefine.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "qrefine.connect",
+        "title": "QRefine: Connect to Database"
+      },
+      {
+        "command": "qrefine.analyze",
+        "title": "QRefine: Analyze Query"
+      },
+      {
+        "command": "qrefine.runAnalysis",
+        "title": "Run SQL Query Analysis"
+      }
+    ],
+    "languages": [
+      {
+        "id": "sql",
+        "extensions": [".sql"],
+        "aliases": ["SQL"]
+      }
+    ],
+    "codeActions": [
+      {
+        "language": "sql",
+        "kind": "quickfix"
+      }
+    ],
+    "configuration": {
+      "title": "QRefine",
+      "properties": {
+        "qrefine.db.type": {
+          "type": "string",
+          "default": "postgres"
+        },
+        "qrefine.db.host": {
+          "type": "string",
+          "default": "localhost"
+        },
+        "qrefine.db.port": {
+          "type": "number",
+          "default": 5432
+        },
+        "qrefine.db.user": {
+          "type": "string",
+          "default": "dev"
+        },
+        "qrefine.db.password": {
+          "type": "string",
+          "default": ""
+        },
+        "qrefine.db.database": {
+          "type": "string",
+          "default": "mydb"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/pg": "^8.15.5",
+    "@types/vscode": "^1.103.0",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.34.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.2",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
