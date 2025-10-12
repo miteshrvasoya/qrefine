@@ -2,7 +2,7 @@
   "name": "qrefine",
   "displayName": "qrefine",
   "description": "",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "ParatparTech",
   "engines": {
     "vscode": "^1.103.0"
@@ -105,7 +105,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
+    "bump": "ts-node utils_scripts/bump_version.ts",
+    "package": "npm run bump && vsce package",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
@@ -122,6 +123,7 @@
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.34.0",
+    "inquirer": "^12.9.6",
     "ts-loader": "^9.5.4",
     "typescript": "^5.9.2",
     "webpack": "^5.101.3",
