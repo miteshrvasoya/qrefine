@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import { analyzeSQLText } from "./staticAnalyzer";
+import { analyzeSQL } from "./staticAnalyzer";
 import { showInlineSuggestions } from "./decorations";
 import { QRefineCodeActionProvider } from "./codeActions";
+import { sqlExtractors } from "./utils/sqlExtractors";
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 let decorationType: vscode.TextEditorDecorationType;
@@ -60,15 +61,40 @@ export function activate(context: vscode.ExtensionContext) {
       { providedCodeActionKinds: QRefineCodeActionProvider.providedCodeActionKinds }
     )
   );
+
+    vscode.workspace.onDidSaveTextDocument((document) => {
+    const ext = document.fileName.split(".").pop();
+
+    if (["js", "ts", "py"].includes(ext || "")) {
+      const sqlSnippets = sqlExtractors(document);
+      const diagnostics: vscode.Diagnostic[] = [];
+
+      for (const snippet of sqlSnippets) {
+        const analysis = analyzeSQL({ text: snippet.query });
+        for (const result of analysis) {
+          diagnostics.push(
+            new vscode.Diagnostic(
+              snippet.range,
+              result.message,
+              // result.severity
+            )
+          );
+        }
+      }
+
+      diagnosticCollection.set(document.uri, diagnostics);
+    }
+  });
+
 }
 
 function runAnalysis(document: vscode.TextDocument) {
   if (document.languageId !== "sql" && !document.fileName.endsWith(".sql")) return;
 
-  const suggestions = analyzeSQLText(document);
+  const suggestions = analyzeSQL({ document });
 
   // Diagnostics
-  const diagnostics: vscode.Diagnostic[] = suggestions.map(s => {
+  const diagnostics: vscode.Diagnostic[] = suggestions.map((s: any) => {
     const severity =
       s.severity === "error"
         ? vscode.DiagnosticSeverity.Error
@@ -91,7 +117,7 @@ function runAnalysis(document: vscode.TextDocument) {
     e => e.document.uri.toString() === document.uri.toString()
   );
   if (editor) {
-    const decorations: vscode.DecorationOptions[] = suggestions.map(s => ({
+    const decorations: vscode.DecorationOptions[] = suggestions.map((s: any) => ({
       range: s.range,
       renderOptions: {
         after: {
