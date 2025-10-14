@@ -1,0 +1,1 @@
+const equery = execureQuery("SELECT * FROM users LEFT JOIN emails ON users.id = emails.user_id WHERE emails.email = ? LIMIT 1", [email]);
