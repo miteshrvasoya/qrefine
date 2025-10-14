@@ -106,7 +106,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "bump": "ts-node utils_scripts/bump_version.ts",
-    "package": "npm run bump && vsce package",
+    "package": "npm run bump && vsce package && vsce publish",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
