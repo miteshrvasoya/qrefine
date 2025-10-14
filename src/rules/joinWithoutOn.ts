@@ -3,23 +3,40 @@ import { SQLRule, RuleSuggestion } from "../types";
 
 export const joinWithoutOnRule: SQLRule = {
   id: "join-without-condition",
-  description: "JOIN without ON or USING clause",
-  apply: (text: string, document: vscode.TextDocument): RuleSuggestion[] => {
+  description: "Detects JOIN statements without ON or USING clause",
+  apply: (text: string, document?: vscode.TextDocument): RuleSuggestion[] => {
     const suggestions: RuleSuggestion[] = [];
-    const regex = /\bJOIN\s+\w+\s*(?!ON|USING)/gi;
-    let match: any;
+
+    // Make sure document is provided
+    if (!document) {
+      console.warn("joinWithoutOnRule: 'document' is undefined.");
+      return suggestions;
+    }
+
+    // This regex finds JOINs not followed by ON or USING
+    const regex = /\bJOIN\s+\w+(\s+\w+)?\s*(?!ON|USING)/gi;
+
+    let match: RegExpExecArray | null;
     while ((match = regex.exec(text)) !== null) {
-      const startPos = document.positionAt(match.index);
-      const endPos = document.positionAt(match.index + match[0].length);
+      // capture values to avoid referencing possibly-null 'match' inside the fix closure
+      const matchIndex = match.index;
+      const matchLength = match[0].length;
+
+      const startPos = document.positionAt(matchIndex);
+      const endPos = document.positionAt(matchIndex + matchLength);
+
       suggestions.push({
-        message: "JOIN without condition – may cause Cartesian product.",
+        message: "JOIN without ON or USING clause – may cause Cartesian product.",
         range: new vscode.Range(startPos, endPos),
         severity: "error",
         code: "join-without-condition",
         fix: (query: string) =>
-          query.replace(match[0], "JOIN table_name ON condition_here")
+          query.slice(0, matchIndex) +
+          "JOIN table_name ON condition_here" +
+          query.slice(matchIndex + matchLength),
       });
     }
+
     return suggestions;
   }
 };

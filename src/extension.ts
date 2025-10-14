@@ -70,6 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
       const diagnostics: vscode.Diagnostic[] = [];
 
       for (const snippet of sqlSnippets) {
+        console.log("Extracted SQL:", snippet);
         const analysis = analyzeSQL({ text: snippet.query });
         for (const result of analysis) {
           diagnostics.push(

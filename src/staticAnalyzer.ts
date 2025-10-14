@@ -13,8 +13,11 @@ interface AnalyzeSQLOptions {
  */
 export function analyzeSQL(options: AnalyzeSQLOptions): RuleSuggestion[] {
   const { text, document, offset = 0 } = options;
+  console.log("analyzeSQL called with options:", text, options);
 
   const sqlText = text ?? document?.getText();
+  console.log("Analyzing SQL:", sqlText);
+
   if (!sqlText) return [];
 
   let allSuggestions: RuleSuggestion[] = [];
@@ -22,6 +25,7 @@ export function analyzeSQL(options: AnalyzeSQLOptions): RuleSuggestion[] {
   for (const rule of rules) {
     try {
       const suggestions = rule.apply(sqlText, document);
+      console.log(`Rule ${rule.id} found ${suggestions.length} suggestions.`);
       // Adjust range if analyzing embedded SQL (e.g. inside a JS string)
       if (text && !document) {
         for (const s of suggestions) {
