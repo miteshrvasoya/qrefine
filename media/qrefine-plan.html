@@ -1,0 +1,394 @@
+<!--
+
+QRefine Plan Visualizer WebView HTML
+
+How to use:
+
+1. In your VS Code extension create a webview panel and set its html to the string content of this file.
+
+   Example in extension side (TypeScript):
+
+   const panel = vscode.window.createWebviewPanel(
+
+     'qrefinePlan',
+
+     'QRefine: Query Plan',
+
+     vscode.ViewColumn.One,
+
+     { enableScripts: true }
+
+   );
+
+   panel.webview.html = `<PASTE THIS HTML CONTENT>`;
+
+2. Send the analyzer response from the extension to the webview:
+
+   panel.webview.postMessage({ type: 'analyzeResponse', payload: response });
+
+   where `response` is the JSON returned by your backend (/analysis) with fields: { plan, visual, suggestions, warnings }
+
+3. The webview listens for messages and renders:
+
+   - Interactive graph (vis-network) of the plan
+
+   - Collapsible tree view of plan nodes
+
+   - Suggestions list (with severity badges and copy buttons)
+
+Notes:
+
+- This file intentionally uses CDN links for React/ReactDOM and vis-network to keep it standalone.
+
+- In production you may want to bundle assets or serve them locally.
+
+- The UI aims for clarity: left column = tree, center = graph, right column = suggestions + details.
+
+-->
+
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>QRefine Plan Visualizer</title>
+
+  <style>
+
+    :root{--bg:#0f1720;--panel:#0b1220;--muted:#9aa6b2;--accent:#60a5fa;--success:#34d399;--warn:#f59e0b;--error:#fb7185;}
+
+    html,body,#root{height:100%;margin:0;background:var(--bg);color:#e6eef6;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+
+    .container{display:grid;grid-template-columns:320px 1fr 360px;grid-gap:12px;padding:12px;height:100%;box-sizing:border-box}
+
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:8px;padding:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6);overflow:auto}
+
+    .title{font-weight:600;margin-bottom:8px;color:#dbeafe}
+
+    #network{height:100%;min-height:200px}
+
+    .tree{font-size:13px;color:var(--muted)}
+
+    .node-label{font-weight:600;color:#cfe9ff}
+
+    .badge{padding:4px 8px;border-radius:999px;font-size:12px;margin-right:6px}
+
+    .suggestion{display:flex;align-items:flex-start;gap:8px;padding:8px;border-radius:6px;margin-bottom:8px}
+
+    .suggestion pre{margin:0;font-family:monospace;background:transparent;color:#dbeafe}
+
+    .s-info{background:rgba(99,102,241,0.08);border-left:4px solid var(--accent)}
+
+    .s-warn{background:rgba(245,158,11,0.06);border-left:4px solid var(--warn)}
+
+    .s-err{background:rgba(251,113,133,0.06);border-left:4px solid var(--error)}
+
+    button.btn{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:6px 8px;border-radius:6px;cursor:pointer}
+
+    .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+
+    .tree ul{list-style:none;padding-left:16px}
+
+    .node-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-radius:4px}
+
+    .node-cost{margin-left:auto;font-size:12px;color:var(--muted)}
+
+    .warning-list{font-size:13px;color:var(--muted)}
+
+    .empty{color:var(--muted);font-size:13px}
+
+    .loading{color:var(--accent);font-size:14px;text-align:center;padding:20px}
+
+  </style>
+
+  <!-- vis-network (UMD) -->
+
+  <link href="https://unpkg.com/vis-network/styles/vis-network.min.css" rel="stylesheet" />
+
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+</head>
+
+<body>
+
+  <div id="root"></div>
+
+  <script>
+
+  (function() {
+
+    const vscode = (window.acquireVsCodeApi && window.acquireVsCodeApi()) || null;
+
+    const {useState, useEffect, useRef} = React;
+
+    function severityClass(s){
+
+      if(s === 'error') return 's-err';
+
+      if(s === 'warning') return 's-warn';
+
+      return 's-info';
+
+    }
+
+    function SeverityBadge({s}){
+
+      const map = {error:'ERROR', warning:'WARN', info:'INFO'};
+
+      return React.createElement('span',{className:'badge', style:{background:'rgba(255,255,255,0.02)', color:'#dbeafe', border:'1px solid rgba(255,255,255,0.03)'}}, map[s]||'INFO');
+
+    }
+
+    function PlanTree({plan}){
+
+      if(!plan || !plan.node_type) return React.createElement('div',{className:'empty'},'No plan available');
+
+      function renderNode(node){
+
+        if(!node) return null;
+
+        const nodeType = node.node_type || 'Unknown';
+
+        const relation = node.relation ? (' — '+node.relation) : '';
+
+        const cost = node.total_cost != null ? `cost: ${node.total_cost}` : '';
+
+        return React.createElement('li',{key:Math.random()},
+
+          React.createElement('div',{className:'node-row'},
+
+            React.createElement('div', {className:'node-label'}, nodeType + relation),
+
+            cost ? React.createElement('div',{className:'node-cost'}, cost) : null
+
+          ),
+
+          node.children && node.children.length ? React.createElement('ul', null, node.children.map(child=>renderNode(child))) : null
+
+        );
+
+      }
+
+      return React.createElement('div',{className:'tree'}, React.createElement('ul', null, renderNode(plan)));
+
+    }
+
+    function SuggestionsList({items}){
+
+      if(!items || items.length===0) return React.createElement('div',{className:'empty'},'No suggestions');
+
+      return React.createElement('div', null,
+
+        items.map((it, idx) => {
+
+          return React.createElement('div', {key:idx, className: 'suggestion ' + (it.severity === 'error' ? 's-err' : it.severity === 'warning' ? 's-warn' : 's-info')},
+
+            React.createElement('div', null, React.createElement(SeverityBadge, {s: it.severity})),
+
+            React.createElement('div', {style:{flex:1}}, React.createElement('div',{style:{fontWeight:600, marginBottom:4}}, it.message), it.rule ? React.createElement('div',{className:'meta'}, `rule: ${it.rule}`) : null),
+
+            React.createElement('div', null,
+
+              React.createElement('button',{className:'btn', onclick:function(){navigator.clipboard.writeText(it.message)}}, 'Copy')
+
+            )
+
+          );
+
+        })
+
+      );
+
+    }
+
+    function GraphPanel({visual}){
+
+      const ref = useRef(null);
+
+      useEffect(()=>{
+
+        if(!visual || !visual.nodes || visual.nodes.length === 0) {
+
+          if(ref.current) ref.current.innerHTML = '<div class="empty" style="padding:20px;text-align:center">No graph data available</div>';
+
+          return;
+
+        }
+
+        const container = ref.current;
+
+        container.innerHTML = '';
+
+        const nodes = new vis.DataSet(visual.nodes.map(n=>({
+
+          id:n.id, 
+
+          label:n.label || n.node_type || 'Unknown', 
+
+          title: `cost: ${n.total_cost != null ? n.total_cost : 'n/a'}`, 
+
+          group: n.node_type || 'default'
+
+        }))); 
+
+        const edges = new vis.DataSet((visual.edges || []).map(e=>({from:e.from, to:e.to})));
+
+        const data = {nodes, edges};
+
+        const options = {
+
+          layout:{hierarchical:{enabled:true, levelSeparation:100, nodeSpacing:200, direction:'UD'}},
+
+          nodes:{shape:'box', font:{color:'#dbeafe'}},
+
+          edges:{arrows:{to:false}},
+
+          interaction:{hover:true}
+
+        };
+
+        new vis.Network(container, data, options);
+
+      },[visual]);
+
+      return React.createElement('div',{id:'network', ref:ref});
+
+    }
+
+    function App(){
+
+      const [plan, setPlan] = useState(null);
+
+      const [visual, setVisual] = useState(null);
+
+      const [suggestions, setSuggestions] = useState([]);
+
+      const [warnings, setWarnings] = useState([]);
+
+      const [loading, setLoading] = useState(false);
+
+      const [error, setError] = useState(null);
+
+      useEffect(()=>{
+
+        // listen for messages from extension
+
+        window.addEventListener('message', (event) => {
+
+          const msg = event.data || (event.detail && event.detail.data);
+
+          if(!msg) return;
+
+          if(msg.type === 'loading'){
+
+            setLoading(true);
+
+            setError(null);
+
+          } else if(msg.type === 'analyzeResponse'){
+
+            setLoading(false);
+
+            const payload = msg.payload;
+
+            setPlan(payload.plan || null);
+
+            setVisual(payload.visual || null);
+
+            setSuggestions(payload.suggestions || []);
+
+            setWarnings(payload.warnings || []);
+
+          } else if(msg.type === 'error'){
+
+            setLoading(false);
+
+            setError(msg.message || 'An error occurred');
+
+          }
+
+        });
+
+        // request initial data if needed
+
+        if(vscode) vscode.postMessage({type:'requestInitial'});
+
+      },[]);
+
+      if(loading) {
+
+        return React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}, 
+
+          React.createElement('div',{className:'loading'}, 'Loading query plan...')
+
+        );
+
+      }
+
+      if(error) {
+
+        return React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}, 
+
+          React.createElement('div',{style:{color:'var(--error)',fontSize:14,padding:20}}, error)
+
+        );
+
+      }
+
+      return React.createElement('div',{className:'container'},
+
+        React.createElement('div',{className:'card'},
+
+          React.createElement('div',{className:'title'},'Plan Tree'),
+
+          React.createElement(PlanTree,{plan})
+
+        ),
+
+        React.createElement('div',{className:'card'},
+
+          React.createElement('div',{className:'title'},'Plan Graph'),
+
+          React.createElement(GraphPanel,{visual})
+
+        ),
+
+        React.createElement('div',{className:'card'},
+
+          React.createElement('div',{className:'title'},'Suggestions'),
+
+          React.createElement(SuggestionsList,{items:suggestions}),
+
+          React.createElement('div',{style:{marginTop:12}},
+
+            React.createElement('div',{className:'title'},'Warnings'),
+
+            warnings && warnings.length ? React.createElement('div',{className:'warning-list'}, warnings.map((w,i)=>React.createElement('div',{key:i},w))) : React.createElement('div',{className:'empty'},'No warnings')
+
+          )
+
+        )
+
+      );
+
+    }
+
+    ReactDOM.render(React.createElement(App), document.getElementById('root'));
+
+  })();
+
+  </script>
+
+</body>
+
+</html>
+

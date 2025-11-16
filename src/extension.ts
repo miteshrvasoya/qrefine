@@ -3,6 +3,7 @@ import { analyzeSQL } from "./staticAnalyzer";
 import { showInlineSuggestions } from "./decorations";
 import { QRefineCodeActionProvider } from "./codeActions";
 import { sqlExtractors } from "./utils/sqlExtractors";
+import { QueryPlanWebview } from "./webview/queryPlanWebview";
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 let decorationType: vscode.TextEditorDecorationType;
@@ -86,6 +87,33 @@ export function activate(context: vscode.ExtensionContext) {
       diagnosticCollection.set(document.uri, diagnostics);
     }
   });
+
+  const webview = new QueryPlanWebview(context.extensionUri);
+
+  const visualizeQueryPlanCommand = vscode.commands.registerCommand(
+    'qrefine.visualizeQueryPlan',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('No active editor found.');
+        return;
+      }
+
+      const selection = editor.selection;
+      const queryText = editor.document.getText(selection) || editor.document.getText();
+
+      console.log("Query WebView is opening for query:", queryText);
+
+      if (!queryText.trim()) {
+        vscode.window.showWarningMessage('No query found to analyze.');
+        return;
+      }
+
+      webview.show(queryText);
+    }
+  );
+
+  context.subscriptions.push(visualizeQueryPlanCommand);
 
 }
 

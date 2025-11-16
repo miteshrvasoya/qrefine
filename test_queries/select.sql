@@ -47,3 +47,5 @@ SELECT * from
 
 -- Mixed query with multiple issues
 SELECT * FROM users u JOIN orders o ORDER BY o.total; 
+
+SELECT * FROM users WHERE email LIKE '%example.com%' ORDER BY created_at;

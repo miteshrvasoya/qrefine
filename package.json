@@ -52,6 +52,10 @@
       {
         "command": "qrefine.runAnalysis",
         "title": "Run SQL Query Analysis"
+      },
+      {
+        "command": "qrefine.visualizeQueryPlan",
+        "title": "QRefine: Visualize Query Plan"
       }
     ],
     "languages": [
@@ -99,6 +103,21 @@
           "default": "mydb"
         }
       }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "qrefine.visualizeQueryPlan",
+          "when": "editorLangId == sql || editorLangId == javascript || editorLangId == typescript || editorLangId == python",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "qrefine.visualizeQueryPlan",
+          "when": "editorTextFocus"
+        }
+      ]
     }
   },
   "scripts": {
