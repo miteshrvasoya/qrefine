@@ -56,6 +56,14 @@
       {
         "command": "qrefine.visualizeQueryPlan",
         "title": "QRefine: Visualize Query Plan"
+      },
+      {
+        "command": "qrefine.login",
+        "title": "QRefine: Login"
+      },
+      {
+        "command": "qrefine.logout",
+        "title": "QRefine: Logout"
       }
     ],
     "languages": [

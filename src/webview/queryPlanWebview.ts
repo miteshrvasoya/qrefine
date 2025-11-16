@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { AuthAPI } from '../auth/api';
 
 export class QueryPlanWebview {
   private panel: vscode.WebviewPanel | null = null;
   private extensionUri: vscode.Uri;
+  private authAPI: AuthAPI;
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, authAPI?: AuthAPI) {
     this.extensionUri = extensionUri;
+    this.authAPI = authAPI || new AuthAPI(null as any); // fallback if not provided
   }
 
   /**
@@ -43,11 +46,11 @@ export class QueryPlanWebview {
   }
 
   /**
-   * Fetch query plan from backend
+   * Fetch query plan from backend with authentication
    */
   private async fetchQueryPlan(query: string) {
     try {
-      const response = await fetch('http://localhost:8000/analysis', {
+      const response = await this.authAPI.request('http://localhost:8000/analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

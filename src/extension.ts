@@ -4,13 +4,26 @@ import { showInlineSuggestions } from "./decorations";
 import { QRefineCodeActionProvider } from "./codeActions";
 import { sqlExtractors } from "./utils/sqlExtractors";
 import { QueryPlanWebview } from "./webview/queryPlanWebview";
+import { AuthManager } from "./auth/manager";
+import { AuthAPI } from "./auth/api";
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 let decorationType: vscode.TextEditorDecorationType;
 let statusBarItem: vscode.StatusBarItem;
+let authManager: AuthManager;
+let authAPI: AuthAPI;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("QRefine activated 🚀");
+
+  // Initialize authentication
+  authManager = new AuthManager(context.extensionUri, context.secrets);
+  authAPI = new AuthAPI(authManager);
+  context.subscriptions.push(authManager.getStatusBarItem());
+  
+  authManager.initialize().catch(err => {
+    console.error("Auth initialization error:", err);
+  });
 
   diagnosticCollection = vscode.languages.createDiagnosticCollection("qrefine");
   context.subscriptions.push(diagnosticCollection);
@@ -30,6 +43,18 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(runAnalysisCommand);
+
+  // Login command
+  const loginCommand = vscode.commands.registerCommand("qrefine.login", async () => {
+    await authManager.showAuthWebview();
+  });
+  context.subscriptions.push(loginCommand);
+
+  // Logout command
+  const logoutCommand = vscode.commands.registerCommand("qrefine.logout", async () => {
+    await authManager.logout();
+  });
+  context.subscriptions.push(logoutCommand);
 
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
@@ -88,7 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  const webview = new QueryPlanWebview(context.extensionUri);
+  const webview = new QueryPlanWebview(context.extensionUri, authAPI);
 
   const visualizeQueryPlanCommand = vscode.commands.registerCommand(
     'qrefine.visualizeQueryPlan',
@@ -163,4 +188,5 @@ export function deactivate() {
   if (diagnosticCollection) diagnosticCollection.dispose();
   if (decorationType) decorationType.dispose();
   if (statusBarItem) statusBarItem.dispose();
+  if (authManager) authManager.dispose();
 }
