@@ -1,33 +1,55 @@
 import * as vscode from "vscode";
 
 export function sqlExtractors(document: vscode.TextDocument) {
-    // Placeholder function to represent SQL extractors module
-    const text = document.getText();
+	const text = document.getText();
 
-    const sqlRegex = /(["'`])\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH)\b[\s\S]*?\1/gi;
+	// First, find all string-like segments (", ', `) in the document.
+	// Then, inside each string, look for strong SQL patterns such as:
+	//  - SELECT ... FROM
+	//  - INSERT ... INTO
+	//  - UPDATE ... SET
+	//  - DELETE ... FROM
+	//  - WITH ... SELECT
+	// This two-stage approach significantly reduces false positives like
+	// import paths (e.g. 'lodash') or generic text constants.
+	const stringRegex = /(["'`])([\s\S]*?)\1/g;
 
-    const sqlQueries: { query: string; range: vscode.Range }[] = [];
-    let match: RegExpExecArray | null;
+	const sqlStructurePatterns: RegExp[] = [
+		/\bSELECT\b[\s\S]+?\bFROM\b/i,
+		/\bINSERT\b[\s\S]+?\bINTO\b/i,
+		/\bUPDATE\b[\s\S]+?\bSET\b/i,
+		/\bDELETE\b[\s\S]+?\bFROM\b/i,
+		/\bWITH\b[\s\S]+?\bSELECT\b/i,
+	];
 
-    while ((match = sqlRegex.exec(text)) !== null) {
-        const rawQuery = match[0];
-        const keyword = match[2];
-        const startIndex = match.index;
-        const endIndex = startIndex + rawQuery.length;
+	const sqlQueries: { query: string; range: vscode.Range }[] = [];
+	let match: RegExpExecArray | null;
 
-        // Heuristic filters: avoid false positives
-        if (
-            rawQuery.split(/\s+/).length > 3 && // more than 3 words
-            /(FROM|WHERE|VALUES|SET|INTO|JOIN)/i.test(rawQuery) // must contain at least one common SQL keyword
-        ) {
-            const startPos = document.positionAt(startIndex);
-            const endPos = document.positionAt(endIndex);
-            sqlQueries.push({
-                query: rawQuery.replace(/^["'`]|["'`]$/g, ""), // remove surrounding quotes
-                range: new vscode.Range(startPos, endPos),
-            });
-        }
-    }
+	while ((match = stringRegex.exec(text)) !== null) {
+		const fullMatch = match[0];
+		const content = match[2]; // inside the quotes/backticks
+		const startIndex = match.index;
+		const endIndex = startIndex + fullMatch.length;
 
-    return sqlQueries;
+		// Quick length/word-count filter to skip tiny strings like 'id', 'lodash', etc.
+		const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
+		if (wordCount < 4) {
+			continue;
+		}
+
+		// Check if the content matches any strong SQL structure.
+		const isSqlLike = sqlStructurePatterns.some((pattern) => pattern.test(content));
+		if (!isSqlLike) {
+			continue;
+		}
+
+		const startPos = document.positionAt(startIndex);
+		const endPos = document.positionAt(endIndex);
+		sqlQueries.push({
+			query: content,
+			range: new vscode.Range(startPos, endPos),
+		});
+	}
+
+	return sqlQueries;
 }

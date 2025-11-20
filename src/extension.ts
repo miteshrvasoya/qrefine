@@ -88,7 +88,9 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-    vscode.workspace.onDidSaveTextDocument((document) => {
+  const backendOutput = vscode.window.createOutputChannel("QRefine Inline Analysis");
+
+  vscode.workspace.onDidSaveTextDocument(async (document) => {
     const ext = document.fileName.split(".").pop();
 
     if (["js", "ts", "py"].includes(ext || "")) {
@@ -110,6 +112,85 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       diagnosticCollection.set(document.uri, diagnostics);
+
+      try {
+        const documentText = document.getText();
+        const hasExecuteQuery = documentText.includes("executeQuery(");
+
+        let timeout: number | null = null;
+        const timeoutMatch = documentText.match(/timeout\s*[:=]\s*(\d+)/i);
+        if (timeoutMatch) {
+          const parsed = parseInt(timeoutMatch[1], 10);
+          if (!isNaN(parsed)) {
+            timeout = parsed;
+          }
+        }
+
+        for (const snippet of sqlSnippets) {
+          if (!snippet.query || !snippet.query.trim()) {
+            continue;
+          }
+
+          const usesSelectStar = /select\s+\*/i.test(snippet.query);
+
+          backendOutput.appendLine("[QRefine] Sending inline query for analysis:");
+          backendOutput.appendLine(`File: ${document.fileName}`);
+          backendOutput.appendLine(`Range: ${snippet.range.start.line}:${snippet.range.start.character} - ${snippet.range.end.line}:${snippet.range.end.character}`);
+          backendOutput.appendLine(`Has executeQuery in file: ${hasExecuteQuery}`);
+          backendOutput.appendLine(`Detected timeout: ${timeout !== null ? timeout + " ms" : "none"}`);
+          backendOutput.appendLine(`Uses SELECT *: ${usesSelectStar}`);
+          backendOutput.appendLine(snippet.query);
+          backendOutput.appendLine("----");
+
+          try {
+            const body: any = {
+              query: snippet.query,
+              explain_only: false,
+              source_file: document.fileName,
+              range: {
+                start: {
+                  line: snippet.range.start.line,
+                  character: snippet.range.start.character,
+                },
+                end: {
+                  line: snippet.range.end.line,
+                  character: snippet.range.end.character,
+                },
+              },
+              has_execute_query: hasExecuteQuery,
+              timeout,
+              flags: {
+                uses_select_star: usesSelectStar,
+              },
+            };
+
+            const response = await authAPI.request("http://localhost:8000/analysis", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+
+            if (!response.ok) {
+              backendOutput.appendLine(`Backend responded with status ${response.status}`);
+              continue;
+            }
+
+            const result = await response.json();
+
+            console.log("Backend analysis result:", result);
+            backendOutput.appendLine("[QRefine] Backend analysis result received.");
+            backendOutput.appendLine(JSON.stringify(result));
+          } catch (err) {
+            console.log("Failed to send inline query to backend:", err);
+            backendOutput.appendLine("[QRefine] Failed to send inline query to backend: " + String(err));
+          }
+        }
+
+        backendOutput.show(true);
+      } catch (e) {
+        console.log("Inline analysis error:", e);
+        backendOutput.appendLine("[QRefine] Inline analysis error: " + String(e));
+      }
     }
   });
 

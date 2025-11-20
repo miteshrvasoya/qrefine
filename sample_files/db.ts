@@ -59,7 +59,6 @@ export class db {
             else if (result.command == "DELETE") return result['rowCount'];
             else return result.rows;
         } catch (error) {
-            
             console.error("query: ", query);
             console.error(error);
 
