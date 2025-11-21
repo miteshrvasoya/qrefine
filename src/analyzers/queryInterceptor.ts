@@ -5,6 +5,7 @@
  */
 
 import * as vscode from "vscode";
+import { EnvironmentConfig } from "../config/environment";
 
 export interface CapturedQuery {
 	query: string;
@@ -90,7 +91,8 @@ export class QueryInterceptor {
 				body.user_id = userId;
 			}
 
-			const response = await fetch("http://127.0.0.1:8000/analysis", {
+			const baseUrl = EnvironmentConfig.getApiBaseUrl();
+			const response = await fetch(`${baseUrl}/analysis`, {
 				method: "POST",
 				headers,
 				body: JSON.stringify(body),

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { AuthAPI } from '../auth/api';
+import { EnvironmentConfig } from '../config/environment';
 
 export class QueryPlanWebview {
   private panel: vscode.WebviewPanel | null = null;
@@ -50,7 +51,8 @@ export class QueryPlanWebview {
    */
   private async fetchQueryPlan(query: string) {
     try {
-      const response = await this.authAPI.request('http://localhost:8000/analysis', {
+      const baseUrl = EnvironmentConfig.getApiBaseUrl();
+      const response = await this.authAPI.request(`${baseUrl}/analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

@@ -4,8 +4,7 @@
  */
 
 import { AuthCredentials, AuthResponse } from "./types";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { EnvironmentConfig } from "../config/environment";
 
 export class AuthClient {
   /**
@@ -13,7 +12,8 @@ export class AuthClient {
    */
   static async register(credentials: AuthCredentials): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      const baseUrl = EnvironmentConfig.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -40,7 +40,8 @@ export class AuthClient {
    */
   static async login(credentials: AuthCredentials): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const baseUrl = EnvironmentConfig.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -66,7 +67,8 @@ export class AuthClient {
    */
   static async validateToken(token: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/validate`, {
+      const baseUrl = EnvironmentConfig.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/auth/validate`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,

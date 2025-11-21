@@ -6,6 +6,7 @@ import { sqlExtractors } from "./utils/sqlExtractors";
 import { QueryPlanWebview } from "./webview/queryPlanWebview";
 import { AuthManager } from "./auth/manager";
 import { AuthAPI } from "./auth/api";
+import { EnvironmentConfig } from "./config/environment";
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 let decorationType: vscode.TextEditorDecorationType;
@@ -15,6 +16,14 @@ let authAPI: AuthAPI;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("[QRefine] 🚀 Extension activated");
+
+  // Detect and configure environment
+  // context.extensionMode: 1 = Production, 2 = Development
+  const extensionMode = context.extensionMode === vscode.ExtensionMode.Production ? "production" : "development";
+  EnvironmentConfig.detectEnvironment(extensionMode);
+  const baseUrl = EnvironmentConfig.getApiBaseUrl();
+  const environment = EnvironmentConfig.getEnvironment();
+  console.log(`[QRefine] 🌍 Environment: ${environment} | API Base URL: ${baseUrl}`);
 
   // Initialize authentication
   console.log("[QRefine] 📝 Initializing AuthManager...");
@@ -193,7 +202,8 @@ export function activate(context: vscode.ExtensionContext) {
             };
 
             console.log(`[QRefine] 📤 Sending to backend: ${JSON.stringify(body).substring(0, 100)}...`);
-            const response = await authAPI.request("http://localhost:8000/analysis", {
+            const baseUrl = EnvironmentConfig.getApiBaseUrl();
+            const response = await authAPI.request(`${baseUrl}/analysis`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
