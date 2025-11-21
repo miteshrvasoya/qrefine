@@ -14,10 +14,10 @@
   "icon": "assets/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/qrefine"
+    "url": "https://github.com/miteshrvasoya/qrefine"
   },
   "bugs": {
-    "url": "https://github.com/your-username/qrefine/issues"
+    "url": "https://github.com/miteshrvasoya/qrefine/issues"
   },
   "activationEvents": [
     "onCommand:qrefine.connect",
