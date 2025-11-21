@@ -3,6 +3,7 @@ import { connection } from "./connection";
 import { functions } from "./functions";
 import { chunk as lodash_chunk, sum as lodash_sum } from 'lodash';
 
+
 export class db {
     public table: string = '';
     public connection: any = '';
@@ -22,6 +23,10 @@ export class db {
     constructor(error: any = new Error(), client_connection: any = "") {
         this.error = error;
         this.connection = client_connection;
+    }
+
+    function abc() {
+        query = `SELECT * FROM users WHERE email LIKE '%example.com%' AND id IN (${user_ids}) AND created_date >= '2025-10-11' AND source = 'qrefine' ORDER BY created_at;`
     }
 
     /**
@@ -343,5 +348,7 @@ export class db {
 
         return return_data;
     }
+
+    
 
 }
