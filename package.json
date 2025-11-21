@@ -2,7 +2,7 @@
   "name": "qrefine",
   "displayName": "qrefine",
   "description": "",
-  "version": "0.5.0",
+  "version": "3.0.0",
   "publisher": "ParatparTech",
   "engines": {
     "vscode": "^1.103.0"
