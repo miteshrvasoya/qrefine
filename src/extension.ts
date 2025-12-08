@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import WebSocket from "ws";
+
 import { analyzeSQL } from "./staticAnalyzer";
 import { showInlineSuggestions } from "./decorations";
 import { QRefineCodeActionProvider } from "./codeActions";
@@ -13,6 +15,8 @@ let decorationType: vscode.TextEditorDecorationType;
 let statusBarItem: vscode.StatusBarItem;
 let authManager: AuthManager;
 let authAPI: AuthAPI;
+let queryPlanWebview: QueryPlanWebview;
+let ws: WebSocket | null = null;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("[QRefine] 🚀 Extension activated");
@@ -30,8 +34,10 @@ export function activate(context: vscode.ExtensionContext) {
   authManager = new AuthManager(context.extensionUri, context.secrets);
   authAPI = new AuthAPI(authManager);
   context.subscriptions.push(authManager.getStatusBarItem());
-  
-  authManager.initialize().catch(err => {
+
+  authManager.initialize().then(() => {
+    connectWebSocket();
+  }).catch(err => {
     console.error("[QRefine] ❌ Auth initialization error:", err);
   });
 
@@ -57,12 +63,17 @@ export function activate(context: vscode.ExtensionContext) {
   // Login command
   const loginCommand = vscode.commands.registerCommand("qrefine.login", async () => {
     await authManager.showAuthWebview();
+    connectWebSocket();
   });
   context.subscriptions.push(loginCommand);
 
   // Logout command
   const logoutCommand = vscode.commands.registerCommand("qrefine.logout", async () => {
     await authManager.logout();
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
   });
   context.subscriptions.push(logoutCommand);
 
@@ -118,14 +129,14 @@ export function activate(context: vscode.ExtensionContext) {
       console.log(`[QRefine] ✅ Processing ${ext} file for SQL extraction...`);
       const sqlSnippets = sqlExtractors(document);
       console.log(`[QRefine] 🔎 Found ${sqlSnippets.length} SQL snippets`);
-      
+
       const diagnostics: vscode.Diagnostic[] = [];
 
       for (const snippet of sqlSnippets) {
         console.log(`[QRefine] 📝 Extracted SQL: ${snippet.query.substring(0, 50)}...`);
         const analysis = analyzeSQL({ text: snippet.query });
         console.log(`[QRefine] 📊 Analysis returned ${analysis.length} suggestions`);
-        
+
         for (const result of analysis) {
           console.log(`[QRefine] 💡 Suggestion: ${result.message}`);
           diagnostics.push(
@@ -180,7 +191,17 @@ export function activate(context: vscode.ExtensionContext) {
 
           try {
             console.log("[QRefine] 🚀 Preparing backend API request...");
-            const body: any = {
+            const config = vscode.workspace.getConfiguration("qrefine");
+            const dbProfile = {
+              type: config.get<string>("db.type", "postgres"),
+              host: config.get<string>("db.host", "localhost"),
+              port: config.get<number>("db.port", 5432),
+              user: config.get<string>("db.user", "postgres"),
+              password: config.get<string>("db.password", ""),
+              database: config.get<string>("db.database", "mydb"),
+            };
+
+            const payload = {
               query: snippet.query,
               explain_only: false,
               source_file: document.fileName,
@@ -199,14 +220,15 @@ export function activate(context: vscode.ExtensionContext) {
               flags: {
                 uses_select_star: usesSelectStar,
               },
+              db_profile: dbProfile
             };
 
-            console.log(`[QRefine] 📤 Sending to backend: ${JSON.stringify(body).substring(0, 100)}...`);
+            console.log(`[QRefine] 📤 Sending to backend: ${JSON.stringify(payload).substring(0, 100)}...`);
             const baseUrl = EnvironmentConfig.getApiBaseUrl();
             const response = await authAPI.request(`${baseUrl}/analysis`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
+              body: JSON.stringify(payload),
             });
 
             console.log(`[QRefine] 📨 Backend response status: ${response.status}`);
@@ -237,7 +259,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  const webview = new QueryPlanWebview(context.extensionUri, authAPI);
+  queryPlanWebview = new QueryPlanWebview(context.extensionUri, authAPI);
 
   const visualizeQueryPlanCommand = vscode.commands.registerCommand(
     'qrefine.visualizeQueryPlan',
@@ -258,19 +280,207 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      webview.show(queryText);
+      // Async visualization
+      try {
+        const baseUrl = EnvironmentConfig.getApiBaseUrl();
+        const config = vscode.workspace.getConfiguration("qrefine");
+        const dbProfile = {
+          type: config.get<string>("db.type", "postgres"),
+          host: config.get<string>("db.host", "localhost"),
+          port: config.get<number>("db.port", 5432),
+          user: config.get<string>("db.user", "postgres"),
+          password: config.get<string>("db.password", ""),
+          database: config.get<string>("db.database", "mydb"),
+        };
+
+        const payload = {
+          query: queryText,
+          explain_only: false,
+          source_file: editor.document.fileName,
+          db_profile: dbProfile
+        };
+
+        const response = await authAPI.request(`${baseUrl}/analysis/visualize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to queue visualization: ${response.status}`);
+        }
+
+        vscode.window.showInformationMessage("QRefine: Visualization queued. You will be notified when ready.");
+
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`QRefine: Visualization failed. ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   );
 
   context.subscriptions.push(visualizeQueryPlanCommand);
 
+  // Share selected text with backend for asynchronous analysis over sockets.
+  const shareSelectionCommand = vscode.commands.registerCommand(
+    "qrefine.shareSelectionForAnalysis",
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage("QRefine: No active editor to share query from.");
+        return;
+      }
+
+      if (!authManager || !authManager.isAuthenticated()) {
+        vscode.window.showInformationMessage(
+          "QRefine: Please login to share queries for analysis.",
+          "Login"
+        ).then(selection => {
+          if (selection === "Login") {
+            vscode.commands.executeCommand("qrefine.login");
+          }
+        });
+        return;
+      }
+
+      const selection = editor.selection;
+      const selectedText = editor.document.getText(selection);
+      const queryText = selectedText || editor.document.getText();
+
+      if (!queryText.trim()) {
+        vscode.window.showWarningMessage("QRefine: No query text found in the current editor.");
+        return;
+      }
+
+      try {
+        const document = editor.document;
+        const baseUrl = EnvironmentConfig.getApiBaseUrl();
+
+        const config = vscode.workspace.getConfiguration("qrefine");
+        const dbProfile = {
+          type: config.get<string>("db.type", "postgres"),
+          host: config.get<string>("db.host", "localhost"),
+          port: config.get<number>("db.port", 5432),
+          user: config.get<string>("db.user", "postgres"),
+          password: config.get<string>("db.password", ""),
+          database: config.get<string>("db.database", "mydb"),
+        };
+
+        const payload = {
+          query: queryText,
+          explain_only: false,
+          source_file: document.fileName,
+          range: {
+            start: {
+              line: selection.start.line,
+              character: selection.start.character,
+            },
+            end: {
+              line: selection.end.line,
+              character: selection.end.character,
+            },
+          },
+          db_profile: dbProfile
+        };
+
+        const response = await authAPI.request(`${baseUrl}/analysis/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        console.log("Payload: ", payload);
+        console.log("Response: ", response);
+
+        if (!response.ok) {
+          throw new Error(`Analysis failed with status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        vscode.window.showInformationMessage("QRefine: Analysis queued. You will be notified when ready.");
+
+      } catch (err) {
+        console.error("[QRefine] Analysis error:", err);
+        vscode.window.showErrorMessage(`QRefine: Analysis failed. ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  );
+
+  context.subscriptions.push(shareSelectionCommand);
+
+}
+
+function connectWebSocket() {
+  if (ws) return;
+
+  const token = authManager.getAccessToken();
+  if (!token) {
+    console.log("[QRefine] ⚠️ No access token available for WebSocket connection.");
+    return;
+  }
+
+  const baseUrl = EnvironmentConfig.getApiBaseUrl();
+  const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/analysis?token=" + token;
+
+  console.log(`[QRefine] 🔌 Connecting to WebSocket: ${wsUrl}`);
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log("[QRefine] ✅ WebSocket connected");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data as string);
+      console.log("[QRefine] 📩 WebSocket message:", data);
+
+      if (data.type === "analysis_complete") {
+        if (data.analysis_type === "visualization") {
+          // Automatically open webview for visualization requests
+          if (data.analysis_id) {
+            queryPlanWebview.loadAnalysis(data.analysis_id);
+          }
+        } else {
+          // Show notification for standard analysis
+          vscode.window.showInformationMessage(
+            `QRefine: Analysis Ready! ${data.summary || ""}`,
+            "View Analysis"
+          ).then(selection => {
+            if (selection === "View Analysis") {
+              if (data.analysis_id) {
+                queryPlanWebview.loadAnalysis(data.analysis_id);
+              } else {
+                console.error("[QRefine] ❌ Received analysis_complete without analysis_id.");
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[QRefine] ❌ WebSocket message error:", e);
+    }
+  };
+
+  ws.onclose = () => {
+    console.log("[QRefine] 🔌 WebSocket disconnected");
+    ws = null;
+    // Reconnect logic could go here if desired
+  };
+
+  ws.onerror = (e) => {
+    console.error("[QRefine] ❌ WebSocket error:", e);
+    if (ws) {
+      ws.close(); // Ensure the socket is closed on error
+    }
+    ws = null;
+  };
 }
 
 function runAnalysis(document: vscode.TextDocument) {
   console.log(`[QRefine] 🔍 runAnalysis called for: ${document.fileName}`);
   console.log(`[QRefine] 📄 Language ID: ${document.languageId}`);
   console.log(`[QRefine] 🏷️  Ends with .sql: ${document.fileName.endsWith(".sql")}`);
-  
+
   if (document.languageId !== "sql" && !document.fileName.endsWith(".sql")) {
     console.log(`[QRefine] ⏭️  EARLY RETURN: Not a .sql file and language is not 'sql'. Skipping analysis.`);
     return;
@@ -287,8 +497,8 @@ function runAnalysis(document: vscode.TextDocument) {
       s.severity === "error"
         ? vscode.DiagnosticSeverity.Error
         : s.severity === "warning"
-        ? vscode.DiagnosticSeverity.Warning
-        : vscode.DiagnosticSeverity.Information;
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Information;
 
     const diagnostic = new vscode.Diagnostic(s.range, s.message, severity);
     diagnostic.source = "QRefine";
