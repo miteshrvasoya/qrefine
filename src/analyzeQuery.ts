@@ -1,211 +1,145 @@
 import * as vscode from "vscode";
-import { client } from "./dbClient";
-import { parsePlan } from "./planParser";
-import { provideDiagnostics } from "./diagnostics";
-import { suggestImprovements } from "./suggestions";
 import { QuerySuggestion } from "./types";
-
+import { tokenize, TokenType, Token } from "./sqlTokenizer";
 
 export function analyzeQuery(sql: string): QuerySuggestion[] {
   const suggestions: QuerySuggestion[] = [];
-  const lines = sql.split('\n');
+  const tokens = tokenize(sql);
 
-  lines.forEach((line, idx) => {
-    const text = line.toLowerCase();
-    const range = new vscode.Range(idx, 0, idx, line.length);
-
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    
     // Rule 1: SELECT *
-    if (/select\s+\*/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'Avoid SELECT * – specify only needed columns.',
-      severity: "warning",
-      range,
-      fix: {
-        title: "Replace * with explicit column names",
-        replacement: line.replace(/\*/g, "<column1>, <column2>")
+    if (token.type === TokenType.Keyword && token.value.toLowerCase() === 'select') {
+      let j = i + 1;
+      // Skip whitespace/comments
+      while (j < tokens.length && (tokens[j].type === TokenType.Whitespace || tokens[j].type === TokenType.Comment)) {
+        j++;
       }
-      });
+      if (j < tokens.length && tokens[j].value === '*') {
+        suggestions.push({
+          line: tokens[j].line,
+          message: 'Avoid SELECT * – specify only needed columns.',
+          severity: "warning",
+          range: tokens[j].range,
+          fix: {
+             title: "Replace * with explicit column names",
+             replacement: "<column1>, <column2>" // Note: Simple replacement, can't easily do full line replacement without more context
+          }
+        });
+      }
     }
 
     // Rule 2: DELETE/UPDATE without WHERE
-    if ((/delete\s+from/.test(text) || /update\s+\w+/.test(text)) && !/where/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'This will affect all rows – add a WHERE clause.',
-      severity: "error",
-      range,
-      fix: {
-        title: "Add WHERE clause",
-        replacement: line.trimEnd() + " WHERE <condition>"
-      }
-      });
+    if (token.type === TokenType.Keyword && (token.value.toLowerCase() === 'delete' || token.value.toLowerCase() === 'update')) {
+        let hasWhere = false;
+        let j = i + 1;
+        while (j < tokens.length) {
+            if (tokens[j].value.toLowerCase() === 'where') {
+                hasWhere = true;
+                break;
+            }
+             if (tokens[j].value === ';') {
+                break;
+            }
+            j++;
+        }
+        
+        if (!hasWhere) {
+             suggestions.push({
+                line: token.line,
+                message: 'This will affect all rows – add a WHERE clause.',
+                severity: "error",
+                range: token.range,
+                fix: {
+                    title: "Add WHERE clause",
+                    replacement: " WHERE <condition>"
+                }
+            });
+        }
     }
 
     // Rule 3: JOIN without ON/USING
-    if (/join\s+\w+/.test(text) && !/on\s+|using\s*\(/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'JOIN without condition may cause a Cartesian product.',
-      severity: "error",
-      range,
-      fix: {
-        title: "Add ON clause to JOIN",
-        replacement: line.trimEnd() + " ON <condition>"
-      }
-      });
+    if (token.type === TokenType.Keyword && token.value.toLowerCase() === 'join') {
+        let hasOn = false;
+        let j = i + 1;
+        while (j < tokens.length) {
+             const t = tokens[j];
+             if (t.type === TokenType.Keyword) {
+                 if (t.value.toLowerCase() === 'on' || t.value.toLowerCase() === 'using') {
+                     hasOn = true;
+                     break;
+                 }
+                 // If we hit another clause like WHERE, GROUP BY, ORDER BY, or another JOIN (unless it's part of the same join chain which is complex, but generally JOIN should be followed by ON before next keyword clause usually)
+                 // Actually, simpler logic: scan until next keyword that starts a new clause or semicolon
+                 if (['where', 'group', 'order', 'left', 'right', 'inner', 'outer', 'full', 'join', 'limit'].includes(t.value.toLowerCase())) {
+                     break;
+                 }
+             }
+             if (t.value === ';') break;
+             j++;
+        }
+
+        if (!hasOn) {
+            suggestions.push({
+                line: token.line,
+                message: 'JOIN without condition may cause a Cartesian product.',
+                severity: "error",
+                range: token.range,
+                fix: {
+                    title: "Add ON clause to JOIN",
+                    replacement: " ON <condition>"
+                }
+            });
+        }
     }
 
-    // Rule 4: Functions in WHERE
-    if (/where\s+.*\(.*\)/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'Avoid functions on indexed columns – they prevent index usage.',
-      severity: "warning",
-      range,
-      fix: {
-        title: "Remove function from WHERE clause",
-        replacement: line.replace(/where\s+(.*\(.*\))/, "where <column> = <value>")
-      }
-      });
+     // Rule 4: Functions in WHERE
+    if (token.type === TokenType.Keyword && token.value.toLowerCase() === 'where') {
+        let j = i + 1;
+        while (j < tokens.length && tokens[j].value !== ';') {
+             // Heuristic: Identifier followed immediately by '('
+             if (tokens[j].type === TokenType.Identifier) {
+                 let k = j + 1;
+                 // skip whitespace
+                  while (k < tokens.length && tokens[k].type === TokenType.Whitespace) k++;
+                  if (k < tokens.length && tokens[k].value === '(') {
+                       suggestions.push({
+                          line: tokens[j].line,
+                          message: 'Avoid functions on indexed columns – they prevent index usage.',
+                          severity: "warning",
+                          range: tokens[j].range
+                        });
+                  }
+             }
+             // Stop at next major keyword (approximate)
+             if (tokens[j].type === TokenType.Keyword && ['group', 'order', 'limit'].includes(tokens[j].value.toLowerCase())) {
+                 break;
+             }
+             j++;
+        }
     }
 
-    // Rule 5: Multiple OR in WHERE
-    if (/where\s+.*or\s+.*or/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'Consider rewriting OR with UNION or use IN for better performance.',
-      severity: "info",
-      range,
-      fix: {
-        title: "Rewrite OR with IN",
-        replacement: line.replace(/where\s+(.*)\sor\s+(.*)\sor\s+(.*)/, "where <column> IN (<value1>, <value2>, <value3>)")
-      }
-      });
-    }
-
-    // Rule 6: ORDER BY without LIMIT
-    if (/order\s+by/.test(text) && !/limit/.test(sql.toLowerCase())) {
-      suggestions.push({
-      line: idx,
-      message: 'ORDER BY without LIMIT may cause unnecessary sorting.',
-      severity: "info",
-      range,
-      fix: {
-        title: "Add LIMIT clause",
-        replacement: line.trimEnd() + " LIMIT <number>"
-      }
-      });
-    }
-
-    // Rule 7: LIKE with leading wildcard
-    if (/like\s+['"]%/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'Leading wildcards prevent index usage – consider full-text search.',
-      severity: "warning",
-      range,
-      fix: {
-        title: "Remove leading wildcard",
-        replacement: line.replace(/like\s+(['"])%/, "like $1")
-      }
-      });
-    }
-
-    // Rule 8: NOT IN
-    if (/not\s+in\s*\(/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'NOT IN can perform poorly – consider using NOT EXISTS.',
-      severity: "warning",
-      range,
-      fix: {
-        title: "Rewrite with NOT EXISTS",
-        replacement: "-- Rewrite using NOT EXISTS\n-- Example:\n-- WHERE NOT EXISTS (SELECT 1 FROM <table> WHERE <condition>)"
-      }
-      });
-    }
 
     // Rule 9: SELECT DISTINCT
-    if (/select\s+distinct/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'DISTINCT may hide duplicates – ensure it’s necessary.',
-      severity: "info",
-      range,
-      fix: {
-        title: "Remove DISTINCT",
-        replacement: line.replace(/distinct\s+/i, "")
-      }
-      });
+    if (token.type === TokenType.Keyword && token.value.toLowerCase() === 'select') {
+         let j = i + 1;
+         while (j < tokens.length && tokens[j].type === TokenType.Whitespace) j++;
+         if (j < tokens.length && tokens[j].value.toLowerCase() === 'distinct') {
+              suggestions.push({
+                line: tokens[j].line,
+                message: 'DISTINCT may hide duplicates – ensure it’s necessary.',
+                severity: "info",
+                range: tokens[j].range,
+                 fix: {
+                    title: "Remove DISTINCT",
+                    replacement: ""
+                  }
+              });
+         }
     }
 
-    // Rule 10: Correlated Subquery
-    if (/select\s*\(select/.test(text)) {
-      suggestions.push({
-      line: idx,
-      message: 'Correlated subquery detected – consider JOIN instead.',
-      severity: "warning",
-      range,
-      fix: {
-        title: "Rewrite subquery as JOIN",
-        replacement: "-- Rewrite correlated subquery as JOIN"
-      }
-      });
-    }
-  });
+  }
 
   return suggestions;
 }
-
-
-
-// export async function analyzeQuery(sql: string) {
-//   const editor = vscode.window.activeTextEditor;
-//   if (!editor) {
-//     vscode.window.showErrorMessage("No active SQL editor.");
-//     return;
-//   }
-
-//   const selection = editor.selection;
-//   const query = selection.isEmpty
-//     ? editor.document.getText()
-//     : editor.document.getText(selection);
-
-//   if (!query.trim()) {
-//     vscode.window.showWarningMessage("No SQL query selected.");
-//     return;
-//   }
-
-//   if (!client) {
-//     vscode.window.showErrorMessage("Not connected to database. Run QRefine: Connect to Database first.");
-//     return;
-//   }
-
-//   try {
-//     const res = await client.query(`EXPLAIN (FORMAT JSON) ${query}`);
-//     const planJson = res.rows[0]["QUERY PLAN"][0];
-
-//     // Parse plan
-//     const parsed = parsePlan(planJson);
-
-//     // Get suggestions
-//     const suggestions = suggestImprovements(parsed);
-
-//     // Show diagnostics
-//     provideDiagnostics(editor.document.uri, suggestions);
-
-//     // Also log to Output channel
-//     const output = vscode.window.createOutputChannel("QRefine Suggestions");
-//     output.clear();
-//     output.appendLine("=== QRefine Suggestions ===");
-//     suggestions.forEach((s, i) => {
-//       output.appendLine(`${i + 1}. ${s.message}`);
-//     });
-//     output.show();
-
-//     vscode.window.showInformationMessage("QRefine analysis complete!");
-//   } catch (err: any) {
-//     vscode.window.showErrorMessage(`Failed to analyze query: ${err.message}`);
-//   }
-// }

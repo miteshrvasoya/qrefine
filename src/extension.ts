@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import WebSocket from "ws";
+const WebSocket = require("ws");
 
 import { analyzeSQL } from "./staticAnalyzer";
 import { showInlineSuggestions } from "./decorations";
@@ -16,7 +16,7 @@ let statusBarItem: vscode.StatusBarItem;
 let authManager: AuthManager;
 let authAPI: AuthAPI;
 let queryPlanWebview: QueryPlanWebview;
-let ws: WebSocket | null = null;
+let ws: any = null;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("[QRefine] 🚀 Extension activated");
@@ -429,7 +429,7 @@ function connectWebSocket() {
     console.log("[QRefine] ✅ WebSocket connected");
   };
 
-  ws.onmessage = (event) => {
+  ws.onmessage = (event: any) => {
     try {
       const data = JSON.parse(event.data as string);
       console.log("[QRefine] 📩 WebSocket message:", data);
@@ -467,7 +467,7 @@ function connectWebSocket() {
     // Reconnect logic could go here if desired
   };
 
-  ws.onerror = (e) => {
+  ws.onerror = (e: any) => {
     console.error("[QRefine] ❌ WebSocket error:", e);
     if (ws) {
       ws.close(); // Ensure the socket is closed on error

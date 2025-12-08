@@ -1,5 +1,25 @@
 import * as vscode from 'vscode';
 
+export enum TokenType {
+    Keyword,
+    Identifier,
+    String,
+    Operator,
+    Comment,
+    Number,
+    Punctuation,
+    Whitespace,
+    Unknown
+}
+
+export interface Token {
+    type: TokenType;
+    value: string;
+    range: vscode.Range;
+    line: number;
+    startChar: number;
+}
+
 export type RuleSeverity = "info" | "warning" | "error";
 
 export interface QuerySuggestion {
@@ -24,5 +44,5 @@ export interface RuleSuggestion {
 export interface SQLRule {
   id: string;
   description: string;
-  apply: (text: string, document: vscode.TextDocument) => RuleSuggestion[];
+  apply: (text: string, document: vscode.TextDocument, tokens?: Token[]) => RuleSuggestion[];
 }

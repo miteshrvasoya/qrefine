@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { rules } from "./rules"; // existing rule definitions
 import { RuleSuggestion } from "./types";
+import { tokenize } from "./sqlTokenizer";
 
 interface AnalyzeSQLOptions {
   text?: string;
@@ -21,10 +22,15 @@ export function analyzeSQL(options: AnalyzeSQLOptions): RuleSuggestion[] {
   if (!sqlText) return [];
 
   let allSuggestions: RuleSuggestion[] = [];
+  const tokens = tokenize(sqlText);
 
   for (const rule of rules) {
     try {
-      const suggestions = rule.apply(sqlText, document);
+      // Tokenize once if we haven't already? Or just tokenize here.
+      // Ideally we tokenize outside the loop but rules might want text.
+      // Let's tokenize once outside.
+      // But wait, tokenize is fast enough.
+      const suggestions = rule.apply(sqlText, document, tokens);
       console.log(`Rule ${rule.id} found ${suggestions.length} suggestions.`);
       // Adjust range if analyzing embedded SQL (e.g. inside a JS string)
       if (text && !document) {

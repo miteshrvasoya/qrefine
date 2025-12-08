@@ -63,7 +63,7 @@ export class QueryPlanWebview {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      const result = await response.json() as any;
       console.log("Received analysis by ID:", result);
 
       this.panel!.webview.postMessage({
@@ -125,7 +125,7 @@ export class QueryPlanWebview {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      const result = await response.json() as any;
 
       console.log("Received query plan response:", result);
 
