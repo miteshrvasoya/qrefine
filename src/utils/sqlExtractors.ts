@@ -17,7 +17,7 @@ interface SQLQuery {
  * - String concatenation
  * - Detects dynamic queries that need runtime interception
  */
-export function sqlExtractors(document: vscode.TextDocument): SQLQuery[] {
+export function sqlExtractors(document: vscode.TextDocument, languageId?: string): SQLQuery[] {
 	const text = document.getText();
 	const sqlQueries: SQLQuery[] = [];
 
@@ -31,7 +31,20 @@ export function sqlExtractors(document: vscode.TextDocument): SQLQuery[] {
 	console.log("Quoted strings found:", quotedStrings.length);
 	sqlQueries.push(...quotedStrings);
 
-	// Extract concatenated SQL strings
+	// Language specific extractions
+	if (languageId === 'python' || languageId === 'py') {
+		const pythonStrings = extractPythonStringLiterals(text, document);
+		console.log("Python strings found:", pythonStrings.length);
+		sqlQueries.push(...pythonStrings);
+	}
+
+	if (languageId === 'go') {
+		const goStrings = extractGoRawStrings(text, document);
+		console.log("Go strings found:", goStrings.length);
+		sqlQueries.push(...goStrings);
+	}
+
+	// Extract concatenated strings (generic)
 	const concatenatedStrings = extractConcatenatedStrings(text, document);
 	console.log("Concatenated strings found:", concatenatedStrings.length);
 	sqlQueries.push(...concatenatedStrings);
@@ -200,6 +213,81 @@ function extractConcatenatedStrings(
 		});
 	}
 
+	return queries;
+}
+
+/**
+ * Extract Python triple-quoted strings (""" or ''')
+ */
+function extractPythonStringLiterals(
+	text: string,
+	document: vscode.TextDocument
+): SQLQuery[] {
+	const queries: SQLQuery[] = [];
+	// Regex for triple quotes. Note: simplistic, doesn't handle escaping well inside
+	const tripleRegex = /("""|''')([\s\S]*?)\1/g;
+	let match: RegExpExecArray | null;
+
+	while ((match = tripleRegex.exec(text)) !== null) {
+		const fullMatch = match[0];
+		const content = match[2];
+		const startIndex = match.index;
+		const endIndex = startIndex + fullMatch.length;
+
+		const validation = validateSQL(content);
+		if (!validation.isValid || validation.confidence < 30) {
+			continue;
+		}
+
+		const startPos = document.positionAt(startIndex);
+		const endPos = document.positionAt(endIndex);
+
+		queries.push({
+			query: content,
+			range: new vscode.Range(startPos, endPos),
+			type: "complete",
+			isValid: validation.isValid,
+			confidence: validation.confidence,
+		});
+	}
+	return queries;
+}
+
+/**
+ * Extract Go raw strings (backticks)
+ * Go backticks do not support interpolation, so we treat them as complete strings.
+ */
+function extractGoRawStrings(
+	text: string,
+	document: vscode.TextDocument
+): SQLQuery[] {
+	const queries: SQLQuery[] = [];
+	// Backticks in Go
+	const backtickRegex = /`([^`]*)`/g;
+	let match: RegExpExecArray | null;
+
+	while ((match = backtickRegex.exec(text)) !== null) {
+		const fullMatch = match[0];
+		const content = match[1];
+		const startIndex = match.index;
+		const endIndex = startIndex + fullMatch.length;
+
+		const validation = validateSQL(content);
+		if (!validation.isValid || validation.confidence < 30) {
+			continue;
+		}
+
+		const startPos = document.positionAt(startIndex);
+		const endPos = document.positionAt(endIndex);
+
+		queries.push({
+			query: content,
+			range: new vscode.Range(startPos, endPos),
+			type: "complete",
+			isValid: validation.isValid,
+			confidence: validation.confidence,
+		});
+	}
 	return queries;
 }
 

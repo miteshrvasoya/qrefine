@@ -125,9 +125,9 @@ export function activate(context: vscode.ExtensionContext) {
     const ext = document.fileName.split(".").pop();
     console.log(`[QRefine] 🔍 File extension: ${ext}`);
 
-    if (["js", "ts", "py"].includes(ext || "")) {
+    if (["js", "ts", "py", "go"].includes(ext || "")) {
       console.log(`[QRefine] ✅ Processing ${ext} file for SQL extraction...`);
-      const sqlSnippets = sqlExtractors(document);
+      const sqlSnippets = sqlExtractors(document, document.languageId);
       console.log(`[QRefine] 🔎 Found ${sqlSnippets.length} SQL snippets`);
 
       const diagnostics: vscode.Diagnostic[] = [];

@@ -120,12 +120,12 @@
       "editor/context": [
         {
           "command": "qrefine.visualizeQueryPlan",
-          "when": "editorLangId == sql || editorLangId == javascript || editorLangId == typescript || editorLangId == python",
+          "when": "editorLangId == sql || editorLangId == javascript || editorLangId == typescript || editorLangId == python || editorLangId == go",
           "group": "navigation"
         },
         {
           "command": "qrefine.shareSelectionForAnalysis",
-          "when": "editorHasSelection && (editorLangId == sql || editorLangId == javascript || editorLangId == typescript || editorLangId == python)",
+          "when": "editorHasSelection && (editorLangId == sql || editorLangId == javascript || editorLangId == typescript || editorLangId == python || editorLangId == go)",
           "group": "navigation@qrefine"
         }
       ],

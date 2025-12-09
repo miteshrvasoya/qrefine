@@ -1,0 +1,1 @@
+let a = "SELECT * FROM orders LEFT JOIN order_details od ON od.order_id = orders.id"
